@@ -13,7 +13,9 @@ engines compiled to WebAssembly, so you can watch and compare them live.
 - The panel at the top left shows live numbers: physics time per step (last, median and 95th percentile of the last
   120 steps), a sparkline against the **8 ms budget** (half of a 60 fps frame), bodies awake, frame rate, and the result
   (extracted; for the tangle tests: passed through, obstacle dragged, released).
-- Controls at the bottom left: engine, scene, number of pieces, random seed.
+- Controls at the bottom left: engine, scene, number of pieces (50, 100, 200, 500, 1000), random seed.
+  Up to 200 pieces the bin is 3 x 3 m; above that its floor grows with the count (4.74 m for 500, 6.71 m for 1000,
+  walls 3 m high) so the heap stays about as tall. Havok with 8 substeps is disabled above 200 pieces (too slow).
 
 Scenes: **settle** (drop and settle), **pullout** (settle, then pull a buried piece out; "skip settle" fast-forwards the
 drop), **tangle-a** (a pipe through a door's window, pulled sideways, then up), **tangle-b** (a cog caught in a truss).
