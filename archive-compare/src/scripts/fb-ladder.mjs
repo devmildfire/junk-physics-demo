@@ -1,11 +1,12 @@
 // Body-count ladder, physics-only mode: every setup at each count on seeds 1..3, appended as JSON lines.
-// A setup stops climbing once its median step p95 (while spawning) passes 100 ms.
+// A setup stops climbing once every seed at a count is broken, or its median physics/frame p95 while spawning
+// passes 500 ms (counts between 8000 and 10000 locate where Jolt's contact budget gives out).
 import fs from 'node:fs';
 import { chromium } from 'playwright-core';
 const [base, out] = process.argv.slice(2);
 const SETUPS = ['threejs', 'rust-jolt', 'godot', 'rust-rapier', 'rust-avian'];
-const COUNTS = [1000, 2000, 4000, 6000, 8000, 10000];
-const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true });
+const COUNTS = [1000, 2000, 4000, 6000, 8000, 8500, 9000, 9500, 10000];
+const b = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', headless: true });
 for (const setup of SETUPS) {
   for (const n of COUNTS) {
     const rows = [];
@@ -27,7 +28,7 @@ for (const setup of SETUPS) {
       await page.close();
     }
     const p95 = rows.map((r) => r.spawnStepMs?.p95 ?? Infinity).sort((a, c) => a - c)[1];
-    if (p95 > 100) break;
+    if (p95 > 500 || rows.every((r) => !r.valid)) break;
   }
 }
 await b.close();

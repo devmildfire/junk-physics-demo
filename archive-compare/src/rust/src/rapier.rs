@@ -9,10 +9,12 @@ impl Rapier {
     pub fn new() -> Self {
         let mut world = PhysicsWorld::default();
         world.integration_parameters.dt = crate::DT;
-        world.insert(
-            RigidBodyBuilder::fixed().translation(Vector::new(0.0, -1.0, 0.0)),
-            ColliderBuilder::cuboid(30.0, 1.0, 30.0).friction(crate::FRICTION).restitution(crate::RESTITUTION),
-        );
+        for (h, c) in crate::STATICS {
+            world.insert(
+                RigidBodyBuilder::fixed().translation(Vector::new(c[0], c[1], c[2])),
+                ColliderBuilder::cuboid(h[0], h[1], h[2]).friction(crate::FRICTION).restitution(crate::RESTITUTION),
+            );
+        }
         Rapier { world, handles: Vec::new() }
     }
 }
@@ -30,7 +32,7 @@ impl crate::Physics for Rapier {
                 .friction(crate::FRICTION)
                 .restitution(crate::RESTITUTION);
             let (handle, _) = self.world.insert(body, collider);
-            // Instance index = spawn order; the floor is handle 0, bodies start at 1.
+            // Instance index = spawn order; the statics are handles 0..4, boxes start at 5.
             self.handles.push(handle);
         }
     }
@@ -43,12 +45,13 @@ impl crate::Physics for Rapier {
         out.clear();
         for (handle, body) in self.world.active_bodies() {
             let (i, _) = handle.into_raw_parts();
-            if i == 0 {
+            let s = crate::STATICS.len() as u32;
+            if i < s {
                 continue;
             }
             let t = body.translation();
             let r = body.rotation();
-            out.extend_from_slice(&[(i - 1) as f32, t.x, t.y, t.z, r.x, r.y, r.z, r.w]);
+            out.extend_from_slice(&[(i - s) as f32, t.x, t.y, t.z, r.x, r.y, r.z, r.w]);
         }
         out.len() / 8
     }

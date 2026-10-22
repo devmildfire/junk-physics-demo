@@ -21,13 +21,15 @@ impl Avian {
             .insert_resource(Gravity(Vec3::NEG_Y * 9.81));
         app.finish();
         app.cleanup();
-        app.world_mut().spawn((
-            RigidBody::Static,
-            Position(Vec3::new(0.0, -1.0, 0.0)),
-            Collider::cuboid(60.0, 2.0, 60.0),
-            Friction::new(crate::FRICTION),
-            Restitution::new(crate::RESTITUTION),
-        ));
+        for (h, c) in crate::STATICS {
+            app.world_mut().spawn((
+                RigidBody::Static,
+                Position(Vec3::from(c)),
+                Collider::cuboid(2.0 * h[0], 2.0 * h[1], 2.0 * h[2]), // full lengths
+                Friction::new(crate::FRICTION),
+                Restitution::new(crate::RESTITUTION),
+            ));
+        }
         // The first update has a zero time delta; run it now so every measured step advances DT.
         app.update();
         Avian { app, entities: Vec::new() }

@@ -6,14 +6,16 @@ extends Node3D
 # bounce 0.05 per body (Godot sums: 0.1 like Jolt's max of 0.1 and 0.1), damping 0.05 in REPLACE mode
 # (COMBINE would add the world default), shape margin 0.05, mass 1.
 #
-# Timing. render=0: 600 ticks/s with time_scale 10, so each step is still 1/60 s but many fall in one frame;
-# no sync callbacks, nothing drawn. render=1: 60 ticks/s, sync through body_set_state_sync_callback (Godot calls
+# One protocol frame is 1/60 s = SUBSTEPS physics ticks of 1/240 s; step and sync times are summed over its ticks.
+# Timing. render=0: 2400 ticks/s with time_scale 10, so each tick is still 1/240 s but many fall in one frame;
+# no sync callbacks, nothing drawn. render=1: 240 ticks/s (at most 4 per drawn frame), sync through body_set_state_sync_callback (Godot calls
 # it from C++ for bodies that moved, as RigidBody3D does) into a MultiMesh.
 # Per tick Godot runs: sync callbacks -> _physics_process -> end_sync + Jolt step -> (frame end: _process, draw).
 # step = end of _physics_process -> first of (next sync callback, next _physics_process, _process);
 # sync = first sync callback -> next _physics_process.
 
-const DT := 1.0 / 60.0
+const SUBSTEPS := 4
+const CELL := 0.8
 const HALF := 0.2
 const FRICTION := 0.5
 const BOUNCE := 0.05
@@ -34,12 +36,17 @@ var render := true
 var rng_state := 0
 var spawned := 0
 var batches := 0
+var side := 0
+var taken_until := PackedInt32Array()
 var space: RID
 var box_shape: RID
 var bodies: Array[RID] = []
 var mm: MultiMesh
 
 var step := 0
+var tick := 0
+var acc_step := 0.0
+var acc_sync := 0.0
 var settle_steps := 0
 var settled_at := -1
 var lost := [0, 0]
@@ -59,30 +66,35 @@ var done := false
 func _ready() -> void:
 	_read_params()
 	if render:
-		# One step per frame, like the shared runner: slow frames slow the simulation, never batch it.
-		Engine.physics_ticks_per_second = 60
-		Engine.max_physics_steps_per_frame = 1
+		# One protocol frame per drawn frame, like the shared runner: slow frames slow the simulation, never batch it.
+		Engine.physics_ticks_per_second = 60 * SUBSTEPS
+		Engine.max_physics_steps_per_frame = SUBSTEPS
 	else:
-		Engine.physics_ticks_per_second = 600
+		Engine.physics_ticks_per_second = 600 * SUBSTEPS
 		Engine.time_scale = 10.0
-		Engine.max_physics_steps_per_frame = 16
+		Engine.max_physics_steps_per_frame = 16 * SUBSTEPS
 	rng_state = seed_value
+	side = roundi(2.0 * SPAWN_HALF / CELL)
+	taken_until.resize(side * side)
 	space = get_world_3d().space
 	PhysicsServer3D.area_set_param(space, PhysicsServer3D.AREA_PARAM_GRAVITY, 9.81)
 	PhysicsServer3D.area_set_param(space, PhysicsServer3D.AREA_PARAM_GRAVITY_VECTOR, Vector3.DOWN)
 	box_shape = PhysicsServer3D.box_shape_create()
 	PhysicsServer3D.shape_set_data(box_shape, Vector3(HALF, HALF, HALF))
 	PhysicsServer3D.shape_set_margin(box_shape, MARGIN)
-	var floor_shape := PhysicsServer3D.box_shape_create()
-	PhysicsServer3D.shape_set_data(floor_shape, Vector3(30, 1, 30))
-	PhysicsServer3D.shape_set_margin(floor_shape, MARGIN)
-	var floor_body := PhysicsServer3D.body_create()
-	PhysicsServer3D.body_set_mode(floor_body, PhysicsServer3D.BODY_MODE_STATIC)
-	PhysicsServer3D.body_add_shape(floor_body, floor_shape)
-	PhysicsServer3D.body_set_param(floor_body, PhysicsServer3D.BODY_PARAM_FRICTION, FRICTION)
-	PhysicsServer3D.body_set_param(floor_body, PhysicsServer3D.BODY_PARAM_BOUNCE, BOUNCE)
-	PhysicsServer3D.body_set_state(floor_body, PhysicsServer3D.BODY_STATE_TRANSFORM, Transform3D(Basis(), Vector3(0, -1, 0)))
-	PhysicsServer3D.body_set_space(floor_body, space)
+	# Floor, then invisible walls round it (1 m thick, 50 m high), as spec.js: [half extents, centre].
+	for s in [[Vector3(30, 1, 30), Vector3(0, -1, 0)], [Vector3(0.5, 25, 31), Vector3(30.5, 25, 0)], [Vector3(0.5, 25, 31), Vector3(-30.5, 25, 0)],
+			[Vector3(31, 25, 0.5), Vector3(0, 25, 30.5)], [Vector3(31, 25, 0.5), Vector3(0, 25, -30.5)]]:
+		var shape := PhysicsServer3D.box_shape_create()
+		PhysicsServer3D.shape_set_data(shape, s[0])
+		PhysicsServer3D.shape_set_margin(shape, MARGIN)
+		var body := PhysicsServer3D.body_create()
+		PhysicsServer3D.body_set_mode(body, PhysicsServer3D.BODY_MODE_STATIC)
+		PhysicsServer3D.body_add_shape(body, shape)
+		PhysicsServer3D.body_set_param(body, PhysicsServer3D.BODY_PARAM_FRICTION, FRICTION)
+		PhysicsServer3D.body_set_param(body, PhysicsServer3D.BODY_PARAM_BOUNCE, BOUNCE)
+		PhysicsServer3D.body_set_state(body, PhysicsServer3D.BODY_STATE_TRANSFORM, Transform3D(Basis(), s[1]))
+		PhysicsServer3D.body_set_space(body, space)
 	if render:
 		_build_view()
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
@@ -172,7 +184,7 @@ func _rng() -> float:
 	return float((x ^ (x >> 14)) & 0xFFFFFFFF) / 4294967296.0
 
 
-# spec.js makeSpawner().due(): 8 batches per simulated second, 10..100 boxes each.
+# spec.js makeSpawner().due(): 8 batches per simulated second, 10..100 boxes each, one free 0.8 m grid cell per box.
 func _spawn_due() -> void:
 	if spawned >= n or floori(step * 8.0 / 60.0) < batches:
 		return
@@ -189,8 +201,12 @@ func _spawn_due() -> void:
 		var angle := _rng() * PI * 2.0
 		var s := sin(angle / 2.0) / length
 		var q := Quaternion(ax * s, ay * s, az * s, cos(angle / 2.0))
-		var x := _rng() * 2.0 * SPAWN_HALF - SPAWN_HALF
-		var z := _rng() * 2.0 * SPAWN_HALF - SPAWN_HALF
+		var c := floori(_rng() * side * side)
+		while taken_until[c] > batches:
+			c = floori(_rng() * side * side)
+		taken_until[c] = batches + 4
+		var x := -SPAWN_HALF + (c % side + 0.5) * CELL + (_rng() * 2.0 - 1.0) * 0.05
+		var z := -SPAWN_HALF + (c / side + 0.5) * CELL + (_rng() * 2.0 - 1.0) * 0.05
 		_add_body(Transform3D(Basis(q), Vector3(x, SPAWN_HEIGHT, z)))
 	spawned += count
 	spawn_us += Time.get_ticks_usec() - a
@@ -242,8 +258,16 @@ func _physics_process(_delta: float) -> void:
 		pending = false
 		if step_end < 0:
 			step_end = cb_first if cb_first >= 0 else now
-		(t.spawnStep if last_was_spawning else t.settleStep).append((step_end - t_end) / 1000.0)
-		t.sync.append((now - cb_first) / 1000.0 if cb_first >= 0 else 0.0)
+		acc_step += (step_end - t_end) / 1000.0
+		acc_sync += (now - cb_first) / 1000.0 if cb_first >= 0 else 0.0
+		tick += 1
+		if tick % SUBSTEPS != 0:
+			_next_tick(false)
+			return
+		(t.spawnStep if last_was_spawning else t.settleStep).append(acc_step)
+		t.sync.append(acc_sync)
+		acc_step = 0.0
+		acc_sync = 0.0
 		step += 1
 		var spawning := spawned < n
 		if not last_was_spawning:
@@ -257,11 +281,17 @@ func _physics_process(_delta: float) -> void:
 		if not spawning and not last_was_spawning and (settled_at >= 0 or settle_steps >= SETTLE_CAP):
 			_finish()
 			return
+	_next_tick(true)
+
+
+# Starts the next tick; a new protocol frame (every SUBSTEPS ticks) may spawn a batch first.
+func _next_tick(frame_start: bool) -> void:
 	cb_first = -1
 	step_end = -1
-	var before := spawned
-	_spawn_due()
-	last_was_spawning = spawned < n or spawned != before
+	if frame_start:
+		var before := spawned
+		_spawn_due()
+		last_was_spawning = spawned < n or spawned != before
 	pending = true
 	t_end = Time.get_ticks_usec()
 

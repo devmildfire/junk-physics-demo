@@ -13,7 +13,15 @@ pub const DENSITY: f32 = 1.0 / (8.0 * HALF * HALF * HALF);
 pub const FRICTION: f32 = 0.5;
 pub const RESTITUTION: f32 = 0.1;
 pub const DAMPING: f32 = 0.05;
-pub const DT: f32 = 1.0 / 60.0;
+/// Floor, then invisible walls round it (1 m thick, 50 m high): [half extents, centre]. Mirrors spec.js.
+pub const STATICS: [([f32; 3], [f32; 3]); 5] = [
+    ([30.0, 1.0, 30.0], [0.0, -1.0, 0.0]),
+    ([0.5, 25.0, 31.0], [30.5, 25.0, 0.0]),
+    ([0.5, 25.0, 31.0], [-30.5, 25.0, 0.0]),
+    ([31.0, 25.0, 0.5], [0.0, 25.0, 30.5]),
+    ([31.0, 25.0, 0.5], [0.0, 25.0, -30.5]),
+];
+pub const DT: f32 = 1.0 / 240.0; // one step; the runner does 4 per 1/60 s frame
 
 pub trait Physics {
     /// `data` holds 7 floats per body: x y z qx qy qz qw.

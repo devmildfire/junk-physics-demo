@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import { chromium } from 'playwright-core';
 const [base, out, ...counts] = process.argv.slice(2);
-const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: false });
+const b = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', headless: false });
 for (const n of counts) for (const setup of ['threejs', 'rust-jolt', 'godot', 'rust-rapier', 'rust-avian']) {
   const q = `threads=4&n=${n}&seed=1&render=1`;
   const page = await b.newPage({ viewport: { width: 1000, height: 640 } });

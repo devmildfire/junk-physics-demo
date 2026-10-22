@@ -1,6 +1,6 @@
 // Smoke test of the main page: run one setup through the UI and print the results table text.
 import { chromium } from 'playwright-core';
-const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true });
+const b = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', headless: true });
 const p = await b.newPage();
 p.on('pageerror', (e) => console.error('pageerror', e.message));
 await p.goto(process.argv[2]);

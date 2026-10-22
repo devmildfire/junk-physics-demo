@@ -6,6 +6,9 @@
 from the colleague's archive run under one protocol in five setups (Three.js + Jolt, Rust + Jolt, Rust + Rapier, Rust + Avian,
 Godot + built-in Jolt), with a selectable number of Jolt worker threads. Source in `archive-compare/src/`.
 
+**For building junk:** [JUNK_PIECES.md](JUNK_PIECES.md) explains how the five kinds of scrap in this demo are
+generated (compounds of primitives, mass, per-engine setup, overlap-free spawning), so they can be rebuilt in any engine.
+
 A browser test bench for a game about pulling pieces out of a tangled scrap heap. Five kinds of junk (truss sections,
 car doors with window openings, kinked pipes, cogs, sheet-metal brackets) are built as compounds of simple shapes, dropped
 into a 3 x 3 m bin, and one buried piece is pulled out with a force-limited spring. The same scene runs on three physics

@@ -36,7 +36,7 @@
 <body>
 <main>
   <h1>Fair engine comparison: the archive scene</h1>
-  <p>The archive's box-drop scene (boxes of 0.4 m fall from 40 m onto a 60 × 60 m floor, 8 batches of 10–100 per simulated second), run under one protocol in five setups. Physics steps a fixed 1/60 s, never tied to the wall clock. Every Jolt setup gets the same number of worker threads; Rapier and Avian run on the main thread only, because neither has browser threads out of the box. A run is broken if any box goes through the floor, or if more than half the boxes on the floor never fall asleep (the sign of Jolt's contact budget overflowing, which is what broke the archive's 10 000-box runs). If 1–50% are still awake when the 20 s settle window ends, the run counts but is marked slow to settle. The floor has no walls, as in the archive, so boxes knocked off its edge are counted separately and do not invalidate a run.</p>
+  <p>The archive's box-drop scene (boxes of 0.4 m fall from 40 m onto a 60 × 60 m floor, 8 batches of 10–100 per simulated second), run under one protocol in five setups. Each 1/60 s frame runs four physics steps of 1/240 s, never tied to the wall clock. Two fixes over the archive: there, boxes were spawned inside each other (85 pairs in a 2 000-box run), and a box hitting at 28 m/s moved 0.47 m per 1/60 s step, more than its own size, so it sank deep into the heap before the solver noticed. Here every box gets a free spot, and the 1/240 s step limits that to 0.12 m. Every Jolt setup gets the same number of worker threads; Rapier and Avian run on the main thread only, because neither has browser threads out of the box. A run is broken if any box goes through the floor, or if more than half the boxes on the floor never fall asleep (the sign of Jolt's contact budget overflowing, which is what broke the archive's 10 000-box runs). All three Jolt setups use the archive's budget of 20 480 contacts: JoltPhysics.js takes that buffer from a fixed 10 MB of scratch memory it does not let JavaScript resize, and a budget of 40 960 already crashes it. Godot reports when a Jolt buffer overflows, and the table names it; JoltPhysics.js discards that report, so for its two setups a heap that never sleeps is marked as a probable overflow. If 1–50% are still awake when the 20 s settle window ends, the run counts but is marked slow to settle. Unlike the archive, the floor has invisible walls (50 m high), so no box can be knocked off it; the off-edge column checks that it stays 0.</p>
 
   <div class="card">
     <div class="controls">
@@ -83,11 +83,11 @@
 
   <h2>What is equal, and what is not</h2>
   <ul>
-    <li>Same scene, spawn sequence (seeded mulberry32), materials (friction 0.5, restitution 0.1, damping 0.05, mass 1), gravity, step and sleeping in every setup. Godot's bounce is set to 0.05 per body because Godot adds the two values; damping uses REPLACE mode.</li>
+    <li>Same scene, spawn sequence (seeded mulberry32, no box starts inside another), materials (friction 0.5, restitution 0.1, damping 0.05, mass 1), gravity, step (4 × 1/240 s per frame, no continuous collision detection anywhere) and sleeping in every setup. Godot's bounce is set to 0.05 per body because Godot adds the two values; damping uses REPLACE mode.</li>
     <li>All three Jolt setups use the archive's contact budget (20480) and box convex radius 0.05. Three.js and Rust + Jolt run the same JoltPhysics.js 1.1.0 build; Godot runs its own built-in Jolt.</li>
     <li>Threads: <code>N</code> means N Jolt worker threads plus the main thread. JoltPhysics.js caps it at hardware threads − 1; Godot uses <code>N</code> as its worker pool. Rapier and Avian always use the main thread only.</li>
-    <li>Rapier and Avian use their own solver defaults (Avian: 6 substeps), since iteration counts do not translate between solvers.</li>
-    <li>Sync copies only the bodies that moved, through each stack's natural API (Godot: the state-sync callback that RigidBody3D uses). In Godot, the step time includes Godot's own per-tick work around Jolt.</li>
+    <li>Rapier and Avian use their own solver defaults (Avian: 6 substeps inside each 1/240 s step), since iteration counts do not translate between solvers.</li>
+    <li>Sync copies only the bodies that moved, through each stack's natural API (Godot: the state-sync callback that RigidBody3D uses, which Godot runs after every 1/240 s tick; the others sync once per frame). In Godot, the step time includes Godot's own per-tick work around Jolt.</li>
     <li>Rendering: one instanced box mesh, Lambert light, the same camera and canvas size, no shadows, no MSAA. "Draw" is CPU time to submit a frame, not GPU time.</li>
   </ul>
 </main>
@@ -102,12 +102,15 @@ const save = (r) => { try { localStorage.setItem('fairbench-runs', JSON.stringif
 let runs = load();
 
 const f = (v) => (v == null ? '–' : v);
+// Godot reports Jolt's buffer overflows; JoltPhysics.js discards that error, so for it a heap that never sleeps is only
+// the probable sign of the same overflow (same scene, same budget).
+const why = (r) => (r.joltOverflow?.length ? ` – ${r.joltOverflow.join(', ')} full` : r.settle === 'never' && (r.setup === 'threejs' || r.setup === 'rust-jolt') ? ' – contact budget probably full' : '');
 const threadsLabel = (r) => (r.setup === 'rust-rapier' || r.setup === 'rust-avian' ? 'main only' : `${r.workers} + main`);
 function table(el, rows) {
-  const head = ['Setup', 'Boxes', 'Seed', 'Threads', 'Mode', 'Step p50', 'Step p95 (spawning)', 'Step p95 (settling)', 'Sync p95', 'Draw p95', 'Frame p95', 'FPS (median)', 'Settled (s)', 'Through floor', 'Off edge', 'Valid'];
+  const head = ['Setup', 'Boxes', 'Seed', 'Threads', 'Mode', 'Physics/frame p50', 'Physics/frame p95 (spawning)', 'Physics/frame p95 (settling)', 'Sync p95', 'Draw p95', 'Frame p95', 'FPS (median)', 'Settled (s)', 'Through floor', 'Off edge', 'Valid'];
   el.innerHTML = `<thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => r.error
     ? `<tr><td>${SETUPS[r.setup] || r.setup}</td><td>${r.n}</td><td>${r.seed}</td><td></td><td></td><td colspan="10" class="bad">${String(r.error).split('\n')[0].slice(0, 120)}</td><td class="bad">no</td></tr>`
-    : `<tr><td>${SETUPS[r.setup] || r.setup}</td><td>${r.bodies}</td><td>${r.seed}</td><td>${threadsLabel(r)}</td><td>${r.render ? 'render' : 'physics'}</td><td>${f(r.spawnStepMs?.p50)}</td><td>${f(r.spawnStepMs?.p95)}</td><td>${f(r.settleStepMs?.p95)}</td><td>${f(r.syncMs?.p95)}</td><td>${f(r.drawMs?.p95)}</td><td>${f(r.frameMs?.p95)}</td><td>${r.frameMs?.p50 ? Math.round(1000 / r.frameMs.p50) : '–'}</td><td class="${r.settle === 'never' ? 'bad' : ''}">${r.settleSeconds ?? `${{ settled: 'yes', slow: 'slow', never: 'never' }[r.settle] ?? 'no'} (${r.awakeAtEnd} awake)`}</td><td class="${r.throughFloor ? 'bad' : ''}">${f(r.throughFloor)}</td><td>${f(r.offEdge)}</td><td class="${r.valid ? 'good' : 'bad'}">${r.valid ? 'yes' : 'no'}</td></tr>`).join('')}</tbody>`;
+    : `<tr><td>${SETUPS[r.setup] || r.setup}</td><td>${r.bodies}</td><td>${r.seed}</td><td>${threadsLabel(r)}</td><td>${r.render ? 'render' : 'physics'}</td><td>${f(r.spawnStepMs?.p50)}</td><td>${f(r.spawnStepMs?.p95)}</td><td>${f(r.settleStepMs?.p95)}</td><td>${f(r.syncMs?.p95)}</td><td>${f(r.drawMs?.p95)}</td><td>${f(r.frameMs?.p95)}</td><td>${r.frameMs?.p50 ? Math.round(1000 / r.frameMs.p50) : '–'}</td><td class="${r.settle === 'never' ? 'bad' : ''}">${r.settleSeconds ?? `${{ settled: 'yes', slow: 'slow', never: 'never' }[r.settle] ?? 'no'} (${r.awakeAtEnd} awake)`}${why(r)}</td><td class="${r.throughFloor ? 'bad' : ''}">${f(r.throughFloor)}</td><td>${f(r.offEdge)}</td><td class="${r.valid ? 'good' : 'bad'}">${r.valid ? 'yes' : 'no'}</td></tr>`).join('')}</tbody>`;
 }
 table($('mine'), runs);
 

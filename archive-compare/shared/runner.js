@@ -1,9 +1,10 @@
 // The measurement protocol, shared by every setup except Godot (bench.gd mirrors it).
-// Physics advances a fixed 1/60 s per step, never tied to the wall clock.
+// One tick is a 1/60 s frame: SPEC.substeps physics steps of SPEC.dt, never tied to the wall clock.
+// "Step" times are the physics time of a whole frame (all substeps); sync runs once per frame.
 // Validity: a run is broken if a box goes through the floor or over half the boxes on it never sleep
 // (Jolt's contact budget overflowing); 1-50% still awake after the 20 s window is 'slow to settle'. Boxes flung off
 // the floor's edge are counted separately (the archive scene has no walls).
-// render=0: steps run back to back; step and sync are timed. render=1: one step per
+// render=0: frames run back to back; step and sync are timed. render=1: one frame per
 // animation frame; step, sync, draw submission and the frame interval are timed.
 import { SPEC, makeSpawner } from './spec.js';
 
@@ -37,7 +38,7 @@ export async function run(adapter, p) {
     }
     const spawning = !spawner.done();
     const t0 = performance.now();
-    adapter.step();
+    for (let i = 0; i < SPEC.substeps; i++) adapter.step();
     const t1 = performance.now();
     adapter.sync();
     const t2 = performance.now();

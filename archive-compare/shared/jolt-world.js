@@ -21,12 +21,15 @@ export function makeJoltWorld(Jolt, threads) {
   const system = jolt.GetPhysicsSystem();
   const bi = system.GetBodyInterfaceNoLock();
 
-  const f = SPEC.floorHalf;
-  const floor = new Jolt.BodyCreationSettings(new Jolt.BoxShape(new Jolt.Vec3(f[0], f[1], f[2]), 0.05, null), new Jolt.RVec3(0, -1, 0), new Jolt.Quat(0, 0, 0, 1), Jolt.EMotionType_Static, 0);
-  floor.mFriction = SPEC.friction;
-  floor.mRestitution = SPEC.restitution;
-  bi.CreateAndAddBody(floor, Jolt.EActivation_DontActivate); // body index 0; boxes are index 1..
-  Jolt.destroy(floor);
+  // Floor and walls are body indices 0..4; boxes start at 5.
+  for (const [f, c] of [[SPEC.floorHalf, [0, -1, 0]], ...SPEC.walls]) {
+    const s = new Jolt.BodyCreationSettings(new Jolt.BoxShape(new Jolt.Vec3(f[0], f[1], f[2]), 0.05, null), new Jolt.RVec3(c[0], c[1], c[2]), new Jolt.Quat(0, 0, 0, 1), Jolt.EMotionType_Static, 0);
+    s.mFriction = SPEC.friction;
+    s.mRestitution = SPEC.restitution;
+    bi.CreateAndAddBody(s, Jolt.EActivation_DontActivate);
+    Jolt.destroy(s);
+  }
+  const statics = 1 + SPEC.walls.length;
 
   const h = SPEC.half;
   const box = new Jolt.BoxShape(new Jolt.Vec3(h, h, h), 0.05, null);
@@ -48,7 +51,8 @@ export function makeJoltWorld(Jolt, threads) {
         c.mRestitution = SPEC.restitution;
         c.mLinearDamping = SPEC.damping;
         c.mAngularDamping = SPEC.damping;
-        ids.push(bi.CreateAndAddBody(c, Jolt.EActivation_Activate));
+        // CreateAndAddBody returns a shared temporary that the next call overwrites, so keep a copy.
+        ids.push(new Jolt.BodyID(bi.CreateAndAddBody(c, Jolt.EActivation_Activate).GetIndexAndSequenceNumber()));
         Jolt.destroy(c);
       }
     },
@@ -63,7 +67,7 @@ export function makeJoltWorld(Jolt, threads) {
         const id = active.at(i);
         const p = bi.GetPosition(id);
         const q = bi.GetRotation(id);
-        out.set([id.GetIndex() - 1, p.GetX(), p.GetY(), p.GetZ(), q.GetX(), q.GetY(), q.GetZ(), q.GetW()], i * 8);
+        out.set([id.GetIndex() - statics, p.GetX(), p.GetY(), p.GetZ(), q.GetX(), q.GetY(), q.GetZ(), q.GetW()], i * 8);
       }
       return n;
     },
