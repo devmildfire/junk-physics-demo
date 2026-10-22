@@ -2,6 +2,10 @@
 
 **Live:** https://devmildfire.github.io/junk-physics-demo/
 
+**Also here:** [Fair engine comparison](https://devmildfire.github.io/junk-physics-demo/archive-compare/), the box-drop scene
+from the colleague's archive run under one protocol in five setups (Three.js + Jolt, Rust + Jolt, Rust + Rapier, Rust + Avian,
+Godot + built-in Jolt), with a selectable number of Jolt worker threads. Source in `archive-compare/src/`.
+
 A browser test bench for a game about pulling pieces out of a tangled scrap heap. Five kinds of junk (truss sections,
 car doors with window openings, kinked pipes, cogs, sheet-metal brackets) are built as compounds of simple shapes, dropped
 into a 3 x 3 m bin, and one buried piece is pulled out with a force-limited spring. The same scene runs on three physics

@@ -1,0 +1,4 @@
+archive-compare/src/rust/target/
+archive-compare/src/godot/.godot/
+archive-compare/src/godot/dist/*
+!archive-compare/src/godot/dist/.gdignore

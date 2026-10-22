@@ -1,0 +1,22 @@
+[package]
+name = "fairbench"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.129"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["HtmlCanvasElement", "WebGl2RenderingContext", "WebGlProgram", "WebGlShader", "WebGlBuffer", "WebGlUniformLocation", "WebGlVertexArrayObject"] }
+glam = "0.30"
+rapier3d = { version = "0.36" }
+avian3d = { version = "0.8", default-features = false, features = ["3d", "parry-f32"] }
+bevy = { version = "0.20", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

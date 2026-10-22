@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fair Engine Comparison</title>
+<script src="coi-serviceworker.js"></script>
+<style>
+  :root { --bg: #f6f7f9; --fg: #1d2330; --muted: #5d6677; --card: #fff; --line: #dde1e8; --accent: #2f6fde; --bad: #c0392b; --good: #1e8a4c; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0e1117; --fg: #dfe4ec; --muted: #8b95a7; --card: #161b24; --line: #2a3140; --accent: #6b9cff; --bad: #ff7b6b; --good: #5fd08f; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 28px 0 8px; }
+  p, li { color: var(--muted); }
+  a { color: var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  select, input, button { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); }
+  button { background: var(--accent); border-color: var(--accent); color: #fff; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--fg); border-color: var(--line); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  iframe { width: 100%; aspect-ratio: 16 / 10; border: 1px solid var(--line); border-radius: 8px; background: #0b0e14; margin-top: 12px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+  th, td { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .good { color: var(--good); }
+  #status { margin-top: 8px; font-size: 13px; color: var(--muted); min-height: 1.5em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fair engine comparison: the archive scene</h1>
+  <p>The archive's box-drop scene (boxes of 0.4 m fall from 40 m onto a 60 × 60 m floor, 8 batches of 10–100 per simulated second), run under one protocol in five setups. Physics steps a fixed 1/60 s, never tied to the wall clock. Every Jolt setup gets the same number of worker threads; Rapier and Avian run on the main thread only, because neither has browser threads out of the box. A run is broken if any box goes through the floor, or if more than half the boxes on the floor never fall asleep (the sign of Jolt's contact budget overflowing, which is what broke the archive's 10 000-box runs). If 1–50% are still awake when the 20 s settle window ends, the run counts but is marked slow to settle. The floor has no walls, as in the archive, so boxes knocked off its edge are counted separately and do not invalidate a run.</p>
+
+  <div class="card">
+    <div class="controls">
+      <label>Setup
+        <select id="setup">
+          <option value="threejs">Three.js + Jolt (JS)</option>
+          <option value="rust-jolt">Rust + Jolt (JS bridge)</option>
+          <option value="rust-rapier">Rust + Rapier</option>
+          <option value="rust-avian">Rust + Avian</option>
+          <option value="godot">Godot + built-in Jolt</option>
+        </select>
+      </label>
+      <label>Jolt worker threads
+        <select id="threads"></select>
+      </label>
+      <label>Boxes
+        <select id="n">
+          <option>500</option><option>1000</option><option selected>2000</option><option>4000</option><option>6000</option><option>8000</option><option>10000</option>
+        </select>
+      </label>
+      <label>Seed <input id="seed" type="number" value="1" min="1" style="width: 5em"></label>
+      <label>Mode
+        <select id="render">
+          <option value="1">Render (one step per frame)</option>
+          <option value="0">Physics only (back to back)</option>
+        </select>
+      </label>
+      <button id="run">Run</button>
+      <button id="runAll" class="secondary">Run all five</button>
+      <button id="clear" class="secondary">Clear results</button>
+    </div>
+    <div id="status"></div>
+    <iframe id="frame" title="Benchmark run" src="about:blank"></iframe>
+  </div>
+
+  <h2>Your runs</h2>
+  <div class="card scroll"><table id="mine"></table></div>
+
+  <h2>Measured on the reference machine</h2>
+  <p id="refNote">Loading…</p>
+  <div class="card scroll"><table id="ref"></table></div>
+  <p>Raw runs: <a href="data/ladder.jsonl">physics-only ladder</a>, <a href="data/render.jsonl">render runs</a>.</p>
+
+  <h2>What is equal, and what is not</h2>
+  <ul>
+    <li>Same scene, spawn sequence (seeded mulberry32), materials (friction 0.5, restitution 0.1, damping 0.05, mass 1), gravity, step and sleeping in every setup. Godot's bounce is set to 0.05 per body because Godot adds the two values; damping uses REPLACE mode.</li>
+    <li>All three Jolt setups use the archive's contact budget (20480) and box convex radius 0.05. Three.js and Rust + Jolt run the same JoltPhysics.js 1.1.0 build; Godot runs its own built-in Jolt.</li>
+    <li>Threads: <code>N</code> means N Jolt worker threads plus the main thread. JoltPhysics.js caps it at hardware threads − 1; Godot uses <code>N</code> as its worker pool. Rapier and Avian always use the main thread only.</li>
+    <li>Rapier and Avian use their own solver defaults (Avian: 6 substeps), since iteration counts do not translate between solvers.</li>
+    <li>Sync copies only the bodies that moved, through each stack's natural API (Godot: the state-sync callback that RigidBody3D uses). In Godot, the step time includes Godot's own per-tick work around Jolt.</li>
+    <li>Rendering: one instanced box mesh, Lambert light, the same camera and canvas size, no shadows, no MSAA. "Draw" is CPU time to submit a frame, not GPU time.</li>
+  </ul>
+</main>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const SETUPS = { threejs: 'Three.js + Jolt', 'rust-jolt': 'Rust + Jolt (bridge)', 'rust-rapier': 'Rust + Rapier', 'rust-avian': 'Rust + Avian', godot: 'Godot + Jolt' };
+const hw = navigator.hardwareConcurrency || 4;
+for (let i = 1; i <= 8; i++) $('threads').add(new Option(i + (i > hw - 1 ? ' (capped)' : ''), i, false, i === 4));
+
+const load = () => { try { return JSON.parse(localStorage.getItem('fairbench-runs') || '[]'); } catch { return []; } };
+const save = (r) => { try { localStorage.setItem('fairbench-runs', JSON.stringify(r)); } catch {} };
+let runs = load();
+
+const f = (v) => (v == null ? '–' : v);
+const threadsLabel = (r) => (r.setup === 'rust-rapier' || r.setup === 'rust-avian' ? 'main only' : `${r.workers} + main`);
+function table(el, rows) {
+  const head = ['Setup', 'Boxes', 'Seed', 'Threads', 'Mode', 'Step p50', 'Step p95 (spawning)', 'Step p95 (settling)', 'Sync p95', 'Draw p95', 'Frame p95', 'Settled (s)', 'Through floor', 'Off edge', 'Valid'];
+  el.innerHTML = `<thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => r.error
+    ? `<tr><td>${SETUPS[r.setup] || r.setup}</td><td>${r.n}</td><td>${r.seed}</td><td></td><td></td><td colspan="9" class="bad">${String(r.error).split('\n')[0].slice(0, 120)}</td><td class="bad">no</td></tr>`
+    : `<tr><td>${SETUPS[r.setup] || r.setup}</td><td>${r.bodies}</td><td>${r.seed}</td><td>${threadsLabel(r)}</td><td>${r.render ? 'render' : 'physics'}</td><td>${f(r.spawnStepMs?.p50)}</td><td>${f(r.spawnStepMs?.p95)}</td><td>${f(r.settleStepMs?.p95)}</td><td>${f(r.syncMs?.p95)}</td><td>${f(r.drawMs?.p95)}</td><td>${f(r.frameMs?.p95)}</td><td class="${r.settle === 'never' ? 'bad' : ''}">${r.settleSeconds ?? `${{ settled: 'yes', slow: 'slow', never: 'never' }[r.settle] ?? 'no'} (${r.awakeAtEnd} awake)`}</td><td class="${r.throughFloor ? 'bad' : ''}">${f(r.throughFloor)}</td><td>${f(r.offEdge)}</td><td class="${r.valid ? 'good' : 'bad'}">${r.valid ? 'yes' : 'no'}</td></tr>`).join('')}</tbody>`;
+}
+table($('mine'), runs);
+
+function urlFor(setup) {
+  const q = `threads=${$('threads').value}&n=${$('n').value}&seed=${$('seed').value}&render=${$('render').value}`;
+  return setup === 'godot' ? `godot/index.html?${q}` : `run.html?setup=${setup}&${q}`;
+}
+
+function runOne(setup) {
+  return new Promise((resolve) => {
+    $('status').textContent = `Running ${SETUPS[setup]}… (times in ms)`;
+    const onMsg = (e) => {
+      if (e.source !== $('frame').contentWindow || e.data?.type !== 'fairbench-result') return;
+      removeEventListener('message', onMsg);
+      runs.push(e.data.result);
+      save(runs);
+      table($('mine'), runs);
+      resolve();
+    };
+    addEventListener('message', onMsg);
+    $('frame').src = urlFor(setup);
+  });
+}
+
+async function go(setups) {
+  for (const b of document.querySelectorAll('button')) b.disabled = true;
+  for (const s of setups) await runOne(s);
+  for (const b of document.querySelectorAll('button')) b.disabled = false;
+  $('status').textContent = 'Done. Times are in milliseconds.';
+}
+$('run').onclick = () => go([$('setup').value]);
+$('runAll').onclick = () => go(Object.keys(SETUPS));
+$('clear').onclick = () => { runs = []; save(runs); table($('mine'), runs); };
+
+fetch('results.json').then((r) => (r.ok ? r.json() : null)).then((d) => {
+  if (!d) return ($('refNote').textContent = 'No reference results published yet.');
+  $('refNote').textContent = d.note;
+  table($('ref'), d.runs);
+}).catch(() => ($('refNote').textContent = 'No reference results published yet.'));
+</script>
+</body>
+</html>
