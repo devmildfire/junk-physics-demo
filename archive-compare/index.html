@@ -73,6 +73,7 @@
   </div>
 
   <h2>Your runs</h2>
+  <p>Times in milliseconds. FPS is 1000 / median frame time (render mode only); 16.67 ms = 60 FPS. A p95 frame far above the step + sync + draw times is a browser hitch, not physics.</p>
   <div class="card scroll"><table id="mine"></table></div>
 
   <h2>Measured on the reference machine</h2>
@@ -103,10 +104,10 @@ let runs = load();
 const f = (v) => (v == null ? '–' : v);
 const threadsLabel = (r) => (r.setup === 'rust-rapier' || r.setup === 'rust-avian' ? 'main only' : `${r.workers} + main`);
 function table(el, rows) {
-  const head = ['Setup', 'Boxes', 'Seed', 'Threads', 'Mode', 'Step p50', 'Step p95 (spawning)', 'Step p95 (settling)', 'Sync p95', 'Draw p95', 'Frame p95', 'Settled (s)', 'Through floor', 'Off edge', 'Valid'];
+  const head = ['Setup', 'Boxes', 'Seed', 'Threads', 'Mode', 'Step p50', 'Step p95 (spawning)', 'Step p95 (settling)', 'Sync p95', 'Draw p95', 'Frame p95', 'FPS (median)', 'Settled (s)', 'Through floor', 'Off edge', 'Valid'];
   el.innerHTML = `<thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => r.error
-    ? `<tr><td>${SETUPS[r.setup] || r.setup}</td><td>${r.n}</td><td>${r.seed}</td><td></td><td></td><td colspan="9" class="bad">${String(r.error).split('\n')[0].slice(0, 120)}</td><td class="bad">no</td></tr>`
-    : `<tr><td>${SETUPS[r.setup] || r.setup}</td><td>${r.bodies}</td><td>${r.seed}</td><td>${threadsLabel(r)}</td><td>${r.render ? 'render' : 'physics'}</td><td>${f(r.spawnStepMs?.p50)}</td><td>${f(r.spawnStepMs?.p95)}</td><td>${f(r.settleStepMs?.p95)}</td><td>${f(r.syncMs?.p95)}</td><td>${f(r.drawMs?.p95)}</td><td>${f(r.frameMs?.p95)}</td><td class="${r.settle === 'never' ? 'bad' : ''}">${r.settleSeconds ?? `${{ settled: 'yes', slow: 'slow', never: 'never' }[r.settle] ?? 'no'} (${r.awakeAtEnd} awake)`}</td><td class="${r.throughFloor ? 'bad' : ''}">${f(r.throughFloor)}</td><td>${f(r.offEdge)}</td><td class="${r.valid ? 'good' : 'bad'}">${r.valid ? 'yes' : 'no'}</td></tr>`).join('')}</tbody>`;
+    ? `<tr><td>${SETUPS[r.setup] || r.setup}</td><td>${r.n}</td><td>${r.seed}</td><td></td><td></td><td colspan="10" class="bad">${String(r.error).split('\n')[0].slice(0, 120)}</td><td class="bad">no</td></tr>`
+    : `<tr><td>${SETUPS[r.setup] || r.setup}</td><td>${r.bodies}</td><td>${r.seed}</td><td>${threadsLabel(r)}</td><td>${r.render ? 'render' : 'physics'}</td><td>${f(r.spawnStepMs?.p50)}</td><td>${f(r.spawnStepMs?.p95)}</td><td>${f(r.settleStepMs?.p95)}</td><td>${f(r.syncMs?.p95)}</td><td>${f(r.drawMs?.p95)}</td><td>${f(r.frameMs?.p95)}</td><td>${r.frameMs?.p50 ? Math.round(1000 / r.frameMs.p50) : '–'}</td><td class="${r.settle === 'never' ? 'bad' : ''}">${r.settleSeconds ?? `${{ settled: 'yes', slow: 'slow', never: 'never' }[r.settle] ?? 'no'} (${r.awakeAtEnd} awake)`}</td><td class="${r.throughFloor ? 'bad' : ''}">${f(r.throughFloor)}</td><td>${f(r.offEdge)}</td><td class="${r.valid ? 'good' : 'bad'}">${r.valid ? 'yes' : 'no'}</td></tr>`).join('')}</tbody>`;
 }
 table($('mine'), runs);
 
